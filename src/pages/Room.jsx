@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
-import client ,{ databases } from "../appwrite/congif";
+import client, { databases } from "../appwrite/congif";
 import conf from "../conf/conf";
-import { ID, Query } from "appwrite";
+import { ID, Query, Role, Permission } from "appwrite";
 import { Trash2, Send } from "react-feather";
 import Header from "../component/Header";
 import { useAuth } from "../utils/AuthContext";
@@ -11,21 +11,31 @@ const Room = () => {
   const [messages, setMessages] = useState([]);
   const [messageBody, setMessageBody] = useState("");
   useEffect(() => {
-    getMessages()
-    const unsubsribe = client.subscribe(`databases.${conf.appwriteDatabaseId}.collections.${conf.appwriteCollectionId}.documents`, response => {
-      // Callback will be executed on changes for documents A and all files.
-      // console.log("real time :",response);
+    getMessages();
+    const unsubsribe = client.subscribe(
+      `databases.${conf.appwriteDatabaseId}.collections.${conf.appwriteCollectionId}.documents`,
+      (response) => {
+        // Callback will be executed on changes for documents A and all files.
+        // console.log("real time :",response);
 
-      if(response.events.includes("databases.*.collections.*.documents.*.create")) {
-         setMessages((prev) => [response.payload, ...prev]);
-        
+        if (
+          response.events.includes(
+            "databases.*.collections.*.documents.*.create"
+          )
+        ) {
+          setMessages((prev) => [response.payload, ...prev]);
+        }
+        if (
+          response.events.includes(
+            "databases.*.collections.*.documents.*.delete"
+          )
+        ) {
+          setMessages((prev) =>
+            prev.filter((message) => message.$id !== response.payload.$id)
+          );
+        }
       }
-      if(response.events.includes("databases.*.collections.*.documents.*.delete")) {
-        setMessages(prev =>
-          prev.filter(message => message.$id !== response.payload.$id)
-        );
-      }
-  });
+    );
     return () => unsubsribe();
   }, []);
 
@@ -33,15 +43,20 @@ const Room = () => {
     e.preventDefault();
     let payload = {
       user_id: user.$id,
-      username : user.name,
+      username: user.name,
       body: messageBody,
     };
+    let premissions = [
+      Permission.write(Role.user(user.$id))
+    ]
+
     let response = await databases.createDocument(
       conf.appwriteDatabaseId,
       conf.appwriteCollectionId,
       ID.unique(),
       payload
     );
+    // console.log(response);
     // setMessages((prev) => [response, ...messages]);
     setMessageBody("");
   };
@@ -68,9 +83,9 @@ const Room = () => {
   // console.log(messages);
   return (
     <main className="container">
-    <Header/>
+      <Header />
       <div className="room--container">
-      <form id="message-form" onSubmit={handleSubmit}>
+        <form id="message-form" onSubmit={handleSubmit}>
           <div>
             <textarea
               required
@@ -84,7 +99,9 @@ const Room = () => {
           </div>
           <div className="send-btn--wrapper">
             {/* <Send onClick={handleSubmit} /> */}
-            <button className="btn btn--secondary" type="submit" value="Send" >{<Send />}</button>
+            <button className="btn btn--secondary" type="submit" value="Send">
+              {<Send />}
+            </button>
           </div>
         </form>
         <div>
@@ -92,21 +109,35 @@ const Room = () => {
             <div key={message.$id} className="message--wrapper">
               <div className="message--header">
                 <small className="message-timestamp">
-                {message?.username ? <p>{message.username}</p> : <p>Anonymous</p>}{new Date(message.$createdAt).toLocaleString()}
+                  {message?.username ? (
+                    <p>{message.username}</p>
+                  ) : (
+                    <p>Anonymous</p>
+                  )}
+                  {new Date(message.$createdAt).toLocaleString()}
                 </small>
-              
               </div>
               <div className="message--content">
-              <div className={"message--body" + (message.user_id === user.$id ? ' message--body--owner' : '')}>
-                        <span>{message.body}</span>
-                        
-              </div>
-              {message.user_id === user.$id && <Trash2 className="delete--btn" onClick={() => deleteMessage(message.$id)} />}
+                <div
+                  className={
+                    "message--body" +
+                    (message.user_id === user.$id
+                      ? " message--body--owner"
+                      : "")
+                  }
+                >
+                  <span>{message.body}</span>
+                </div>
+                {message.$permissions.includes(`delete(\"user:${user.$id}\")`) && (
+                  <Trash2
+                    className="delete--btn"
+                    onClick={() => deleteMessage(message.$id)}
+                  />
+                )}
               </div>
             </div>
           ))}
         </div>
-        
       </div>
     </main>
   );
